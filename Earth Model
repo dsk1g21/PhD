@@ -48,7 +48,7 @@ ee = 4.803205e-10
 nu_ion = 2.6e-9 * (neutrals * 1e-6) * np.sqrt(1.76 / mu_in)
 nu_ions = 2.21 * np.pi * (neutrals * 1e-6) * ((m*1e3) /((mi + m)*1e3)) * np.sqrt((1.76 * (ee**2))/mu_in)
 
-nu_en = 2.33e-11 * (neutrals * 1e-6) * (1 - (1.21e-4 * Te)) / Te
+nu_en = 2.33e-11 * (neutrals) * (1 - (1.21e-4 * Te)) / Te
 print('collision frequency', (nu_ions))
 Omega_ci = np.zeros(len(z))
 Omega_ce = np.zeros(len(z))
@@ -56,7 +56,7 @@ Omega_ci.fill(((e * B / mi)))
 Omega_ce.fill(((e * B) / 9.1e-31))
 print('gyrofrequency', Omega_ci)
 ion_p_contr = (1 / (mi * nu_ions)) * ((nu_ions ** 2) / ((nu_ions ** 2) + (Omega_ci ** 2)))
-electron_p_contr = 0#(1 / ((9.1e-31) * nu_en)) * ((nu_en ** 2) / ((nu_en ** 2) + (Omega_ce ** 2)))
+electron_p_contr = (1 / ((9.1e-31) * nu_en)) * ((nu_en ** 2) / ((nu_en ** 2) + (Omega_ce ** 2)))
 
 pedersen = ions * (e ** 2) * (ion_p_contr + electron_p_contr) / 1e-6 # conductivity is in m-3 not cm-3 so had to adjust for that
 print(max(pedersen))
