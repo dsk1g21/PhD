@@ -15,11 +15,11 @@ chi = 0
 e = 1.6e-19 # C to keep B in Teslas
 gamma_n = 1.76e-24 # cm3
 B = 30e-6 # A/m
-Mole_of_N2 = 0.02802 # kgmol-1
-Mole_of_N = 0.01401 # kgmol-1
+Mole_of_N2 = 28 # kgmol-1
+Mole_of_N = 14 # kgmol-1
 
 def mass(n):
-    return n / (6.022e23) # returns kg
+    return n * 1.67e-27 # returns kg
 
 m = mass(Mole_of_N2)
 h = 1000000
