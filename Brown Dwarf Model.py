@@ -107,10 +107,6 @@ plt.gca().invert_xaxis()
 
 plt.show()
 
-for i in range(len(z)):
-    if pedersen[i] == max(pedersen):
-        print('max height:', z[i])
-
 fig, axs = plt.subplots(1, 3, sharey='row')
 axs[0].semilogx(neutrals * 1e-6, z * 1e-3)
 axs[0].set_xlim(1e-50, n0)
@@ -151,3 +147,4 @@ axs[1].legend()
 plt.ylim(-10, 1000)
 plt.ylabel('altitude, km')
 plt.show()
+
