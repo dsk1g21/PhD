@@ -1,50 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-
-print('Starting the code')
-M_B = 1.898e27 * 21
-R_B = 71492e3
-G = 6.6743e-11
-g = G * M_B / R_B ** 2 # ms-2
-print('Gravity', g)
-T_eff = 780 # K
-logg = 3.0
-g_B = 1.2 # Gaunt factor
-n0 = 3e14
-alpha = 4e-13 # cm3s-1
-alpha_1 =  alpha # * 0.38
-sigma = 6.3e-18 # cm2 ionisation cross section
-sigma_gas = 8.8e-17 # cm2
-B_background = 0.1 # T
-chi = 0
-h = 4.135e-15
-E = 18 * h * 2.998e8 / (688e-10)
-I_inf = 3.5e14 * 13.6 #evs-1m-2
-C = 1/36.2
-k = 1.38e-23 # m2kgs-2K-18
+# constants etc
+k = 1.38e-23 # m2kgs-2K-1
 e = 1.6e-19 # C to keep B in Teslas
-gamma_n = 0.82e-24 # cm3
-H2 = 2
-H1 = 1
-au = 1.67e-27
-m = H2 * au
-mi = H1 * au
+au = 1.67e-27 # kg
+T_eff = 800 # K based on the rodriguez paper
+logg = 5 # cms-1
+P0 = 1.2e-4 # bar
+g = 10 ** logg * 1e-2 # to adjust and get ms-2
+C = 1 / 36.2 # eV-1
+I_inf = 3.5e14 * 13.6 # eVs-1m-2
+sigma = 6.3e-22 # m2
+chi = 0 
+alpha = 4e-13 # cm3s-1
+B = 0.1
+gamma_n = 0.82
+z = np.linspace(0, 100000, 1000)
+m = 2 * au
+mi = au
 
-df = pd.read_csv(r'Data files\plot-data.csv', names=['height', 'pressure'])
+H = (m * g / (k * T_eff)) # m-1
+print('h', 1/H)
 
-DF_fz = pd.read_csv(r'\\uol.le.ac.uk\root\staff\home\d\dsk10\My Documents\Code\Data files\x-z y-f.csv', names=['height', 'f'])
-DF_pz = pd.read_csv(r'\\uol.le.ac.uk\root\staff\home\d\dsk10\My Documents\Code\Data files\plot-data.csv', names=['height', 'p'])
-
+# read digitised plots first
+DF_fz = pd.read_csv(r'\\uol.le.ac.uk\root\staff\home\d\dsk10\My Documents\Code\Data files\x-z y-f 2.csv', names=['height', 'f'])
+DF_pz = pd.read_csv(r'\\uol.le.ac.uk\root\staff\home\d\dsk10\My Documents\Code\Data files\x-z y-p.csv', names=['height', 'p'])
 df = pd.merge_ordered(DF_fz, DF_pz, fill_method=None)
-#df = df.sort_values(by='height', ascending=False)
 df1 = df.copy()
 df = df.drop(columns=['f'])
 df1 = df1.drop(columns=['p'])
-df = df.interpolate(method='quadratic')
-df1 = df1.interpolate(method='quadratic')
-#df.reindex(index=df.index[::-1])
-print(df)
+df = df.interpolate(method='nearest')
+df1 = df1.interpolate(method='nearest')
+
 def smoothing(x, y):
     y_avg = np.zeros(len(x))
     y_avg[0] = y.iloc[0]
@@ -54,97 +42,102 @@ def smoothing(x, y):
 
 new_f = smoothing(df['p'], df1['f'])
 
-z = np.linspace(0, 4000000, 10000)
-df['height'] = df['height'] 
-H = m * g / (k * T_eff) # ~7km 
-print('Scale height', 1/H)
-P = np.exp(-z * H)
-def q(z):
-    Q = C * sigma * n0 * I_inf * np.exp(-z*H - (sigma * (1/H) * n0 ) * np.exp(-z*H) / np.cos(chi))
+# now move onto our barometric, isothermal model with reference being P=1.4e-4
+
+P = P0 * np.exp(-z * H)
+print('Pmin', P[-1])
+n = (P * 1e5) / (k * T_eff) # number density of neutrals in SI
+
+m, c = np.polyfit(z, np.log10(P), 1)
+
+def q():
+    #photoionisation on a pressure scale - shouldnt change the profile
+    Q = C * sigma * n[0] * I_inf * (P / P0) * np.exp(- (sigma * (1/H) * n[0] ) * (P/P0) / np.cos(chi))
     return Q * 1e-6
+print(max(q()))
+ions = (q() / alpha) ** 0.5 
 
-neutrals = n0 * np.exp(-z * H)
-print('max photoionisation', max(q(z)))
-ions = ((q(z))/alpha_1)**0.5
-
-f = ions / (neutrals + ions)
-print('max number ions', max(ions))
+f = (ions) / ((n * 1e-6) + ions)
 
 mu_in = ((m * mi) * 1e6) / ((m + mi) * 1e3) / ((1.67e-24)) # reduced mass of ion-neutral pair in atomic units but from grams
-print('Reduced mass', mu_in)
+nu_ion = 2.6e-9 * (n * 1e-6) * np.sqrt(gamma_n / mu_in)
+nu_en = 4.5e-9 * (n * 1e-6) * (1 - (1.35e-4 * T_eff)) / T_eff**0.5
 
-ee = 4.803205e-10
+def Omega(z, m):
+    return np.full_like(z, e * B / m)
 
-nu_ion = 2.6e-9 * (neutrals * 1e-6) * np.sqrt(0.82 / mu_in)
-nu_en = 4.5e-9 * (neutrals) * (1 - (1.35e-4 * T_eff)) / T_eff**0.5
-print('collision frequency', (nu_ion))
-Omega_ci = np.zeros(len(z))
-Omega_ce = np.zeros(len(z))
-Omega_ci.fill(((e * B_background / mi))) 
-Omega_ce.fill(((e * B_background) / 9.1e-31))
-omega_ci = np.sqrt(ions * e**2 / (mi * 8.854187817e-12))
-
-ion_p_contr = (1 / (mi * nu_ion)) * ((nu_ion ** 2) / ((nu_ion ** 2) + (Omega_ci ** 2)))
-electron_p_contr = (1 / ((9.1e-31) * nu_en)) * ((nu_en ** 2) / ((nu_en ** 2) + (Omega_ce ** 2)))
+ion_p_contr = (1 / (mi * nu_ion)) * ((nu_ion ** 2) / ((nu_ion ** 2) + (Omega(z, mi) ** 2)))
+electron_p_contr = (1 / ((9.1e-31) * nu_en)) * ((nu_en ** 2) / ((nu_en ** 2) + (Omega(z, 9.1e-31) ** 2)))
 
 pedersen = ions * (e ** 2) * (ion_p_contr + electron_p_contr) / 1e-6 # conductivity is in m-3 not cm-3 so had to adjust for that
 print('Maximum Pedersen Conductivity:', max(pedersen))
 
-sigma_h = (ions * e ** 2) *(-((1 / (mi * nu_ion)) * ((nu_ion * Omega_ci) / ((nu_ion ** 2) + (Omega_ci ** 2)))) + ((1 / ((9.1e-31) * nu_en)) * ((nu_en * Omega_ce) / ((nu_en ** 2) + (Omega_ce ** 2))))) / 1e-6
+sigma_h = (ions * e ** 2) *(-((1 / (mi * nu_ion)) * ((nu_ion * Omega(z, mi)) / ((nu_ion ** 2) + (Omega(z, mi) ** 2)))) + ((1 / ((9.1e-31) * nu_en)) * ((nu_en * Omega(z, 9.1e-31)) / ((nu_en ** 2) + (Omega(z, 9.1e-31) ** 2))))) / 1e-6
 
 # conductance Sigma_p
 
 con = sum(pedersen * (z[1] - z[0]))
-print('Pedersen Conductance:', con)
-plt.ylabel(r'f')
-plt.loglog(P, f, label='Initial number density=3e14')
-plt.loglog(df['p'], df1['f'])
-plt.xlabel('pressure')
-plt.ylim(1e-12, 1e0)
-plt.xlim(1e-14, 1e0)
-plt.legend()
-plt.gca().invert_xaxis()
+print('Pedersen conductance', con)
 
-plt.show()
+gen = (1 / (mi * nu_ion)) + (1 / (9.1e-31 * nu_en)) * ions * e**2
 
-fig, axs = plt.subplots(1, 3, sharey='row')
-axs[0].semilogx(neutrals * 1e-6, z * 1e-3)
-axs[0].set_xlim(1e-50, n0)
+figure, axs = plt.subplots(1, 3, sharey='col')
+
+axs[0].loglog(n * 1e-2, P)
 axs[0].set_xlabel(r'Neutral number density, $cm^{-3}$', fontsize=7)
-axs[0].set_title('Neutral number density variation with altitude', fontsize=7)
-axs[1].semilogx(q(z), z*1e-3)
+axs[0].set_ylabel('Pressure, bar', fontsize=7)
+axs[0].invert_yaxis()
+ax0 = axs[0].twinx()
+ax0.semilogx(n * 1e-2, z*1e-3)
+
+axs[1].loglog(q(), P, label=rf'$q_m = {max(q()):e}$')
+axs[1].set_xlim(5e-4, 5e4)
 axs[1].set_xlabel(r'Photoionization rate, $cm^{-3}s^{-1}$', fontsize=7)
-axs[1].set_title('Photoionization variation with altitude', fontsize=7)
-axs[1].set_xlim(0.01, 1e6)
-axs[1].set_ylim(-10, 1000)
-axs[2].semilogx(ions, z*1e-3)
+axs[1].invert_yaxis()
+ax12 = axs[1].twinx()
+ax12.semilogx(q(), z*1e-3)
+axs[1].set_title(r'Variation of neutral number density, photoionisation rate, and ion number density with height for neutral species of H$_2$ and ionised species of H$^+$ on brown dwarf with log(g)=5', fontsize=8)
+axs[1].legend(loc='lower right', prop={'size': 6})
+
+axs[2].loglog(ions, P, label=rf'max $n_i = {int(max(ions)):e}$')
 axs[2].set_xlabel(r'Ion number density, $cm^{-3}$', fontsize=7)
-axs[2].set_title('Ion density variation with altitude', fontsize=7)
-axs[2].set_xlim(1e2)
-axs[2].set_ylim(-10, 1000)
-plt.ylabel(r'Reduced Height, km', fontsize=7)
+axs[2].set_xlim(51000, 1e9)
+axs[2].invert_yaxis()
+ax13 = axs[2].twinx()
+ax13.semilogx(ions, z*1e-3)
+ax13.set_ylabel('Altitude, km', fontsize=7)
+axs[2].legend(loc='lower right', prop={'size': 6})
+
 plt.tight_layout()
 plt.show()
 
-plt.semilogy(z, P)
-plt.ylabel(r'P')
-#plt.loglog(P, f)
-plt.ylim(1e-14, 1e2)
-plt.xlabel('pressure')
-#plt.gca().invert_xaxis()
+figure, axs = plt.subplots(1, 2, figsize=(10, 5), sharey='col')
 
-figure, axs = plt.subplots(1, 2, figsize=(10, 5), sharey='row')
-
-axs[0].semilogx(Omega_ci, z * 1e-3, color='black', label=r'$\Omega_{ci}$')
-axs[0].semilogx(nu_ion, z * 1e-3, label=r'$\nu_{in}$', color='plum')
-axs[0].semilogx(nu_en, z * 1e-3, color='darkseagreen', label=r'$\nu_{en}$')
-axs[0].set_xlabel(r'log frequency, $s^{-1}$')
+axs[0].loglog(Omega(P, mi), P, color='black', label=r'$\Omega_{ci}$')
+axs[0].loglog(nu_ion, P, label=r'$\nu_{in}$', color='plum')
+axs[0].loglog(nu_en, P, color='darkseagreen', label=r'$\nu_{en}$')
+axs[0].set_xlabel(r'log frequency, $s^{-1}$', fontsize=7)
 axs[0].legend(loc='lower left')
-axs[1].semilogx(pedersen, z * 1e-3, color='purple', label=r'$\sigma_{p}$')
-axs[1].set_xlabel(r'Conductivity, $\Omega^{-1}m^{-3}$')
-axs[1].set_xlim(1e-30)
-axs[1].legend()
-plt.ylim(-10, 1000)
-plt.ylabel('altitude, km')
-plt.show()
+ax0 = axs[0].twinx()
+ax0.semilogx(Omega(P, mi), z*1e-3, color='black')
+ax0.semilogx(nu_ion, z*1e-3, color='plum')
+ax0.semilogx(nu_en, z*1e-3, color='darkseagreen')
+axs[0].invert_yaxis()
+axs[0].set_ylabel('Pressure, bar', fontsize=7)
 
+axs[1].loglog(pedersen, P, color='purple', label=rf'$\sigma_p$, maximum $\sigma_p = {max(pedersen):e}$')
+axs[1].set_xlabel(r'Conductivity, $\Omega^{-1}m^{-3}$', fontsize=7)
+axs[1].loglog(sigma_h, P, color='darkseagreen', label=r'$\sigma_{h}$')
+axs[1].loglog(gen, P, color='deeppink', label=r'$\sigma_{0}$')
+axs[1].set_xlim(1e-14)
+axs[1].legend()
+ax1 = axs[1].twinx()
+ax1.semilogx(pedersen, z*1e-3, color='purple')
+ax1.semilogx(sigma_h, z*1e-3, color='darkseagreen')
+ax1.semilogx(gen, z*1e-3, color='deeppink')
+axs[1].invert_yaxis()
+ax1.set_ylabel('Altitude, km', fontsize=7)
+plt.title(rf'Collision frequencies and conductivity of the upper ionosphere on brown dwarf of log(g)=5 for neutral species of H$_2$ and ionised species of H$^+$, conductance={con:2f} mho', x=-0.1, pad=10, fontsize=8)
+
+plt.tight_layout()
+plt.show()
