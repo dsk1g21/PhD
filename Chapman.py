@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import periodictable as pt
 
 class Chapman:
     k = 1.38e-23 # Boltzmann constant, m2kgs-2K-1
@@ -8,7 +7,7 @@ class Chapman:
     au = 1.67e-27 # Atomic mass unit, kg
     me = 9.1e-31 # Electron mass, kg
 
-    def __init__(self, name, T, g, P0, m_ion, m_neutral, z, B, sigma, C, I_inf, chi=0):
+    def __init__(self, name, T, g, P0, m_ion, m_neutral, z, B, C, I_inf, n0, chi=0):
         self.name = name
         self.T = T
         self.g = g
@@ -16,9 +15,9 @@ class Chapman:
         self.chi = chi
         self.z = np.linspace(0, z, 10000)
         self.B = B
-        self.sigma = sigma
         self.C = C
         self.I_inf = I_inf
+        self.n0 = n0
         if m_neutral == 'H':
             self.m_neutral = 1
         elif m_neutral == 'H2':
@@ -30,7 +29,7 @@ class Chapman:
         elif m_neutral == 'N2':
             self.m_neutral = 28
         else:
-            print('Neutrals species not yet added')
+            raise ValueError('Neutrals species not yet added')
         if m_ion == 'H+':
             self.m_ion = 1
         elif m_ion == 'H3+':
@@ -40,7 +39,13 @@ class Chapman:
         elif m_ion == 'N+':
             self.m_ion = 14
         else:
-            ValueError('Ion species not yet added')
+            raise ValueError('Ion species not yet added')
+        if m_ion == 'H+':
+            self.sigma = 6.3e-22
+        elif m_ion == 'O2+':
+            self.sigma = 20e-22
+        else:
+            raise ValueError('Ion species not yet added')
         
     def alpha(self):
         if self.m_ion == 1:
@@ -52,7 +57,7 @@ class Chapman:
         elif self.m_ion == 3:
             return 1.15e-7 * (300/self.T) ** 0.65
         else:
-            return ValueError('Neutral species not yet added')
+            raise ValueError('Neutral species not yet added')
 
     def mass(self):
         return self.au * self.m_neutral, self.au * self.m_ion
@@ -71,8 +76,10 @@ class Chapman:
       return self.P0 * np.exp( - self.z * self.scale_height())
 
     def neutrals(self):
-        # returns number density of neutrals in m-3
-        return (self.pressure_scale() * 1e5) / (self.k * self.T)
+        if self.n0 != 0:
+            return self.n0 * np.exp( - self.z * self.scale_height())
+        else:
+            return (self.pressure_scale() * 1e5) / (self.k * self.T)
 
     def q(self):
         Q = self.C * self.sigma * self.neutrals()[0] * self.I_inf * np.exp(-self.z * self.scale_height() 
@@ -94,7 +101,7 @@ class Chapman:
             gamma_n = 0.77
             return 2.6e-9 * self.neutrals() * 1e-6 * np.sqrt(gamma_n / self.mu_in())
         else:
-            return ValueError('Neutral species yet to be added')
+            raise ValueError('Neutral species yet to be added')
     
     def nu_en(self):
         if self.m_neutral == 2:
@@ -102,7 +109,7 @@ class Chapman:
         elif self.m_neutral == 28:
             return 2.33e-11 * self.neutrals() * 1e-6 * (1 - 1.21e-4 * self.T) * self.T
         else:
-            return ValueError('Neutral species yet to be added')
+            raise ValueError('Neutral species yet to be added')
     
     def Omega(self):
         # returns ion gyrofrequency as [0] and electron gyrofrequency as [1]
@@ -153,7 +160,6 @@ class Chapman:
         axs[2].legend(loc='lower right', prop={'size': 6})
 
         plt.tight_layout()
-        plt.show()
 
     def plot_conductivity(self):
         
@@ -175,7 +181,7 @@ class Chapman:
         axs[1].set_xlabel(r'Conductivity, $\Omega^{-1}m^{-3}$', fontsize=7)
         axs[1].loglog(self.conductivity()[1], self.pressure_scale(), color='darkseagreen', label=r'$\sigma_{h}$')
         axs[1].loglog(self.conductivity()[0], self.pressure_scale(), color='deeppink', label=r'$\sigma_{0}$')
-        axs[1].set_xlim(1e-14)
+        axs[1].set_xlim(1e-20)
         axs[1].legend()
         ax1 = axs[1].twinx()
         ax1.semilogx(self.conductivity()[2], self.z*1e-3, color='purple')
@@ -183,26 +189,22 @@ class Chapman:
         ax1.semilogx(self.conductivity()[0], self.z*1e-3, color='deeppink')
         axs[1].invert_yaxis()
         ax1.set_ylabel('Altitude, km', fontsize=7)
-        plt.title(rf'Collision frequencies and conductivity of the upper ionosphere, conductance={self.conductance():2f} mho', x=-0.1, pad=10, fontsize=8)
+        plt.title(rf'Collision frequencies and conductivity of the upper ionosphere, conductance={self.conductance():e} mho', x=-0.1, pad=10, fontsize=8)
 
         plt.tight_layout()
-        plt.show()
 
     @classmethod
     def planetary_object(cls, name, **kwargs):
         name = name.lower()
         G = 6.6743e-11 # gravitational constant
         if name == 'earth':
-            return cls("Earth", T=600, g=9.81, m_ion='O2+', m_neutral='N2', B=60000e-9, **kwargs)
+            return cls("Earth", T=600, g=9.81, C=1/35, m_ion='O2+', m_neutral='N2', B=60000e-9, **kwargs)
         elif name == 'jupiter':
             M_J = 1.898e27
             R_J = 71492e3
             g = G * M_J / R_J ** 2
-            return cls("Jupiter", 1000, g=g, B=834000e-9, m_neutral='H2', **kwargs)
-        elif name == 'brown dwarf':
-            M_J = 1.898e27 * 18
-            R_J = 71492e3
-            g = G * M_J / R_J ** 2
-            return cls("Brown dwarf", 800, g, B=0.1, **kwargs)
+            return cls("Jupiter", 1000, g=g, C=1/36.2, B=834000e-9, m_neutral='H2', **kwargs)
+        elif 'brown dwarf' in name:
+            return cls("Brown dwarf", m_neutral='H2', C=1/36.2, B=0.05, **kwargs)
         else:
             raise ValueError(f"Unknown object: {name}")
